@@ -1,0 +1,6 @@
+{
+  "name": "YAAWP Services",
+  "description": "A lean digital agency delivering web development, marketing, design, and creative services through a curated network of independent specialists.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
