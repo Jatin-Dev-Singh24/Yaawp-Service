@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { SpecialistApplicationData } from '../types';
 import { ArrowLeft, CheckCircle2, Shield, Send, RefreshCw } from 'lucide-react';
+import { agencyApi } from '../services/agencyApi';
 
 interface JoinNetworkPageProps {
   onBackToHome: () => void;
@@ -32,7 +33,7 @@ export const JoinNetworkPage: React.FC<JoinNetworkPageProps> = ({ onBackToHome }
     'Other Specialized Domain Expert',
   ];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
 
@@ -50,10 +51,24 @@ export const JoinNetworkPage: React.FC<JoinNetworkPageProps> = ({ onBackToHome }
     }
 
     setIsSubmitting(true);
-    setTimeout(() => {
+    try {
+      await agencyApi.submitSpecialistApplication({
+        fullName: formData.fullName.trim(),
+        email: formData.email.trim(),
+        discipline: formData.discipline,
+        portfolioUrl: formData.portfolioUrl.trim(),
+        yearsOfExperience: formData.yearsOfExperience,
+        weeklyAvailability: formData.weeklyAvailability,
+        primarySkills: formData.primarySkills?.trim() || undefined,
+        briefBio: formData.briefBio?.trim() || undefined,
+      });
       setIsSubmitting(false);
       setSubmitted(true);
-    }, 600);
+    } catch (err: any) {
+      console.error('Failed to submit application:', err);
+      setIsSubmitting(false);
+      setErrorMsg(err.message || 'Unable to submit your application. Please check your information and try again.');
+    }
   };
 
   const handleReset = () => {

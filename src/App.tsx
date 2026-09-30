@@ -17,15 +17,41 @@ import { AboutPage } from './pages/AboutPage';
 import { PricingPage } from './pages/PricingPage';
 import { JoinNetworkPage } from './pages/JoinNetworkPage';
 import { LegalPage } from './pages/LegalPages';
+import { AdminWorkspacePage } from './pages/AdminWorkspacePage';
 import { AnimatePresence, motion } from 'framer-motion';
 import { editorialEase } from './components/MotionReveal';
 
 export default function App() {
+  const checkIsAdmin = () => {
+    if (typeof window === 'undefined') return false;
+    const pathname = window.location.pathname.toLowerCase();
+    const hash = window.location.hash.toLowerCase();
+    return (
+      pathname.startsWith('/admin') ||
+      pathname.startsWith('/dashboard') ||
+      hash === '#admin' ||
+      hash === '#dashboard'
+    );
+  };
+
+  const [isAdminView, setIsAdminView] = useState<boolean>(checkIsAdmin);
   const [currentView, setCurrentView] = useState<ViewMode>('home');
   const [activeModalService, setActiveModalService] = useState<ServiceItem | null>(null);
   const [activeModalProject, setActiveModalProject] = useState<ProjectConcept | null>(null);
   const [contactInitialService, setContactInitialService] = useState<string>('Web Development');
   const [contactInitialTier, setContactInitialTier] = useState<string>('Comprehensive Project');
+
+  useEffect(() => {
+    const handleLocationChange = () => {
+      setIsAdminView(checkIsAdmin());
+    };
+    window.addEventListener('popstate', handleLocationChange);
+    window.addEventListener('hashchange', handleLocationChange);
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange);
+      window.removeEventListener('hashchange', handleLocationChange);
+    };
+  }, []);
 
   // Handle global key events for modals (e.g., ESC to close)
   useEffect(() => {
@@ -89,6 +115,17 @@ export default function App() {
     }, 100);
   };
 
+  if (isAdminView) {
+    return (
+      <AdminWorkspacePage
+        onReturnToPublic={() => {
+          setIsAdminView(false);
+          window.history.pushState(null, '', '/');
+        }}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF8F5] text-[#191816]">
       {/* Global Top Bar Navigation */}
@@ -96,6 +133,10 @@ export default function App() {
         currentView={currentView}
         onNavigate={handleNavigate}
         onSelectService={handleSelectServiceById}
+        onOpenAdmin={() => {
+          setIsAdminView(true);
+          window.history.pushState(null, '', '/admin');
+        }}
       />
 
       {/* Main View Area with Smooth Motion Transitions */}
@@ -232,6 +273,10 @@ export default function App() {
       <Footer
         onNavigate={handleNavigate}
         onSelectService={handleSelectServiceById}
+        onOpenAdmin={() => {
+          setIsAdminView(true);
+          window.history.pushState(null, '', '/admin');
+        }}
       />
 
       {/* Interactive Detail Modals */}

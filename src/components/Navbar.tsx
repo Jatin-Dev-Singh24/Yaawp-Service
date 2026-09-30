@@ -8,12 +8,14 @@ interface NavbarProps {
   currentView: ViewMode;
   onNavigate: (view: ViewMode, hash?: string) => void;
   onSelectService?: (serviceId: string) => void;
+  onOpenAdmin?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   currentView,
   onNavigate,
   onSelectService,
+  onOpenAdmin,
 }) => {
   const [solutionsOpen, setSolutionsOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -197,7 +199,18 @@ export const Navbar: React.FC<NavbarProps> = ({
         </nav>
 
         {/* Zone 3: Primary Action & Mobile Hamburger */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          {onOpenAdmin && (
+            <button
+              onClick={onOpenAdmin}
+              className="hidden lg:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#655F57] hover:text-[#191816] hover:bg-[#EFEAE2] rounded transition-colors"
+              title="Agency Director & Staff Workspace"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-[#581825]"></span>
+              <span>Workspace</span>
+            </button>
+          )}
+
           <button
             onClick={() => onNavigate('home', '#contact')}
             className="hidden sm:inline-flex items-center justify-center px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-[#FAF8F5] bg-[#581825] hover:bg-[#3E0E18] transition-colors rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#581825]"
@@ -289,6 +302,18 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 Join the Specialist Network →
               </button>
+
+              {onOpenAdmin && (
+                <button
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    onOpenAdmin();
+                  }}
+                  className="block w-full text-left text-sm font-medium text-[#7A746C] hover:text-[#191816] py-2"
+                >
+                  Agency Workspace Portal →
+                </button>
+              )}
             </div>
           </div>
 

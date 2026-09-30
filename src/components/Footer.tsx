@@ -6,9 +6,10 @@ import { ArrowUp } from 'lucide-react';
 interface FooterProps {
   onNavigate: (view: ViewMode, hash?: string) => void;
   onSelectService?: (serviceId: string) => void;
+  onOpenAdmin?: () => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ onNavigate, onSelectService }) => {
+export const Footer: React.FC<FooterProps> = ({ onNavigate, onSelectService, onOpenAdmin }) => {
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -189,6 +190,16 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onSelectService }) =
                     Terms of Service
                   </button>
                 </li>
+                {onOpenAdmin && (
+                  <li>
+                    <button
+                      onClick={onOpenAdmin}
+                      className="hover:text-[#FAF8F5] transition-colors text-left text-xs opacity-60 hover:opacity-100 cursor-pointer"
+                    >
+                      Staff Portal
+                    </button>
+                  </li>
+                )}
               </ul>
             </div>
           </div>
@@ -196,8 +207,19 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, onSelectService }) =
 
         {/* Bottom Bar */}
         <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[#7A746C]">
-          <div>
-            © {currentYear} YAAWP Services. All rights reserved.
+          <div className="flex items-center gap-2">
+            <span>© {currentYear} YAAWP Services. All rights reserved.</span>
+            {onOpenAdmin && (
+              <>
+                <span>·</span>
+                <button
+                  onClick={onOpenAdmin}
+                  className="hover:text-[#FAF8F5] transition-colors opacity-60 hover:opacity-100 cursor-pointer"
+                >
+                  Agency Workspace
+                </button>
+              </>
+            )}
           </div>
 
           <div className="flex items-center gap-6">

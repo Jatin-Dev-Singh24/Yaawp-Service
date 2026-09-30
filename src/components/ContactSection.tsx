@@ -4,6 +4,7 @@ import { SERVICES } from '../data/agencyData';
 import { Send, CheckCircle2, RefreshCw } from 'lucide-react';
 import { FadeUp } from './MotionReveal';
 import { motion } from 'framer-motion';
+import { agencyApi } from '../services/agencyApi';
 
 interface ContactSectionProps {
   initialService?: string;
@@ -24,14 +25,14 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
     budgetRange: initialBudget || 'Comprehensive Project',
     timeline: 'Within 4-8 weeks',
     projectDetails: '',
-    agreedToPrivacy: true,
+    agreedToPrivacy: false,
   });
 
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
 
@@ -49,11 +50,23 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
     }
 
     setIsSubmitting(true);
-    // Simulate brief processing
-    setTimeout(() => {
+    try {
+      await agencyApi.submitInquiry({
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        company: formData.company?.trim() || undefined,
+        service: formData.service,
+        budgetRange: formData.budgetRange,
+        timeline: formData.timeline,
+        projectDetails: formData.projectDetails?.trim() || undefined,
+      });
       setIsSubmitting(false);
       setSubmitted(true);
-    }, 600);
+    } catch (err: any) {
+      console.error('Failed to submit quote inquiry:', err);
+      setIsSubmitting(false);
+      setErrorMsg(err.message || 'Unable to submit your inquiry at this moment. Please try again.');
+    }
   };
 
   const handleReset = () => {
