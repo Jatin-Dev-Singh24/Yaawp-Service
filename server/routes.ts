@@ -1,6 +1,12 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import crypto from 'node:crypto';
 import { db } from './db';
+import {
+  sendClientInquiryEmail,
+  sendFreelancerApplicationEmail,
+  getEmailConfigStatus,
+  getAgencyNotificationEmail,
+} from './email';
 
 export const apiRouter = Router();
 
@@ -101,6 +107,26 @@ apiRouter.post('/public/inquiry', (req: Request, res: Response) => {
       id
     );
 
+    // Asynchronously dispatch email notification without blocking HTTP response
+    const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+    sendClientInquiryEmail(
+      {
+        id,
+        name: name.trim(),
+        email: email.trim(),
+        company: company ? company.trim() : null,
+        service: service.trim(),
+        budgetRange: budgetRange || null,
+        timeline: timeline || null,
+        projectDetails: projectDetails || null,
+        websiteOrSocial: websiteOrSocial || null,
+        createdAt: now,
+      },
+      baseUrl
+    ).catch((emailErr) => {
+      console.error('[YAAWP Email] Background inquiry email dispatch error:', emailErr);
+    });
+
     res.json({ success: true, leadId: id });
   } catch (err: any) {
     console.error('Error handling inquiry:', err);
@@ -153,6 +179,26 @@ apiRouter.post('/public/specialist-apply', (req: Request, res: Response) => {
       'freelancer',
       id
     );
+
+    // Asynchronously dispatch email notification without blocking HTTP response
+    const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+    sendFreelancerApplicationEmail(
+      {
+        id,
+        fullName: fullName.trim(),
+        email: email.trim().toLowerCase(),
+        discipline: discipline.trim(),
+        portfolioUrl: portfolioUrl.trim(),
+        yearsOfExperience: yearsOfExperience || null,
+        weeklyAvailability: weeklyAvailability || null,
+        primarySkills: primarySkills || null,
+        briefBio: briefBio || null,
+        createdAt: now,
+      },
+      baseUrl
+    ).catch((emailErr) => {
+      console.error('[YAAWP Email] Background specialist email dispatch error:', emailErr);
+    });
 
     res.json({ success: true, freelancerId: id });
   } catch (err: any) {
@@ -252,6 +298,16 @@ apiRouter.get('/auth/me', (req: Request, res: Response) => {
       name: session.name,
       role: session.role,
     },
+  });
+});
+
+apiRouter.get('/auth/config', (_req: Request, res: Response) => {
+  const isDev = process.env.NODE_ENV !== 'production' || process.env.DEMO_MODE === 'true';
+  const adminUser = db.prepare('SELECT email FROM users WHERE role = ? LIMIT 1').get('admin') as { email: string } | undefined;
+  res.json({
+    allowDemoCredentials: isDev,
+    hasConfiguredAdmin: Boolean(adminUser),
+    isProduction: process.env.NODE_ENV === 'production',
   });
 });
 
@@ -922,15 +978,18 @@ apiRouter.get('/admin/tasks', requireAdmin, (req: Request, res: Response) => {
 
 apiRouter.post('/admin/tasks', requireAdmin, (req: Request, res: Response) => {
   try {
-    const { project_id, title, description, assigned_freelancer_id, status, priority, deadline, internal_notes } = req.body;
-    if (!project_id || !title) {
+    const rawProjectId = req.body.project_id || req.body.projectId;
+    const rawFreelancerId = req.body.assigned_freelancer_id || req.body.assignedFreelancerId;
+    const { title, description, status, priority, deadline, internal_notes } = req.body;
+
+    if (!rawProjectId || !title) {
       return res.status(400).json({ error: 'Project and task title are required.' });
     }
 
     const id = 'tsk_' + crypto.randomUUID();
     const now = new Date().toISOString();
 
-    const maxOrderRow = db.prepare('SELECT MAX(order_index) as max_idx FROM tasks WHERE project_id = ? AND status = ?').get(project_id, status || 'Backlog') as any;
+    const maxOrderRow = db.prepare('SELECT MAX(order_index) as max_idx FROM tasks WHERE project_id = ? AND status = ?').get(rawProjectId, status || 'Backlog') as any;
     const nextOrder = (maxOrderRow?.max_idx ?? -1) + 1;
 
     db.prepare(`
@@ -939,14 +998,14 @@ apiRouter.post('/admin/tasks', requireAdmin, (req: Request, res: Response) => {
         priority, deadline, order_index, internal_notes, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      id, project_id, title.trim(), description || null, assigned_freelancer_id || null,
+      id, rawProjectId, title.trim(), description || null, rawFreelancerId || null,
       status || 'Backlog', priority || 'Medium', deadline || null, nextOrder,
       internal_notes || null, now, now
     );
 
-    recordActivity(project_id, id, 'Agency Director', 'task_created', `Created task "${title}"`);
+    recordActivity(rawProjectId, id, 'Agency Director', 'task_created', `Created task "${title}"`);
 
-    res.json({ success: true, id });
+    res.json({ success: true, id, taskId: id });
   } catch (err: any) {
     console.error('Failed to create task:', err);
     res.status(500).json({ error: 'Failed to create task' });
@@ -1017,7 +1076,7 @@ apiRouter.patch('/admin/tasks/:id', requireAdmin, (req: Request, res: Response) 
 apiRouter.post('/admin/tasks/:id/request-revision', requireAdmin, (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { revision_instructions } = req.body;
+    const revision_instructions = req.body.revision_instructions || req.body.instructions;
     const now = new Date().toISOString();
 
     db.prepare(`
@@ -1342,5 +1401,83 @@ apiRouter.get('/admin/export/:type', requireAdmin, (req: Request, res: Response)
     res.send(csvLines.join('\n'));
   } catch (err: any) {
     res.status(500).send('Export failed');
+  }
+});
+
+// ==========================================
+// 12. SYSTEM DIAGNOSTICS & MANAGEMENT
+// ==========================================
+
+apiRouter.get('/admin/system/email-status', requireAdmin, (_req: Request, res: Response) => {
+  try {
+    const status = getEmailConfigStatus();
+    res.json(status);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to inspect email configuration' });
+  }
+});
+
+apiRouter.post('/admin/system/test-email', requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const status = getEmailConfigStatus();
+    if (!status.configured) {
+      return res.status(400).json({
+        success: false,
+        error: `Email provider not configured. Missing: ${status.missingFields.join(', ')}`,
+      });
+    }
+
+    const recipient = req.body?.recipient || status.recipientEmail;
+    if (!recipient) {
+      return res.status(400).json({ success: false, error: 'No recipient email specified.' });
+    }
+
+    const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+    const testResult = await sendClientInquiryEmail(
+      {
+        id: 'test_' + crypto.randomUUID().slice(0, 8),
+        name: 'Test Client (YAAWP Diagnostics)',
+        email: recipient,
+        company: 'Diagnostic Test Studio',
+        service: 'System Verification',
+        budgetRange: '$10,000+',
+        timeline: 'Immediate verification',
+        projectDetails: 'This is a verified test email sent from the YAAWP Agency Workspace.',
+        websiteOrSocial: baseUrl,
+        createdAt: new Date().toISOString(),
+      },
+      baseUrl
+    );
+
+    if (testResult.success) {
+      res.json({ success: true, message: `Test email sent successfully to ${recipient}`, messageId: testResult.messageId });
+    } else {
+      res.status(502).json({ success: false, error: testResult.error || 'Failed to dispatch test email.' });
+    }
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err?.message || 'Exception during email test' });
+  }
+});
+
+apiRouter.post('/admin/system/purge-demo-data', requireAdmin, (_req: Request, res: Response) => {
+  try {
+    // Purge only seeded fictional records (prefixed with known demo IDs)
+    const demoLeadIds = ['lead_elena', 'lead_marcus', 'lead_sophia', 'lead_henri', 'lead_clara_dupont'];
+    const demoClientIds = ['cli_aura', 'cli_kanso', 'cli_monolith', 'cli_vanguard', 'cli_solas'];
+    const demoFreelancerIds = ['spc_liam', 'spc_claire', 'spc_david', 'spc_maya', 'spc_james', 'spc_soren', 'spc_zoe'];
+    const demoProjectIds = ['prj_aura', 'prj_kanso', 'prj_monolith', 'prj_vanguard', 'prj_solas'];
+
+    db.exec('BEGIN TRANSACTION;');
+    for (const id of demoLeadIds) db.prepare('DELETE FROM leads WHERE id = ?').run(id);
+    for (const id of demoProjectIds) db.prepare('DELETE FROM projects WHERE id = ?').run(id);
+    for (const id of demoFreelancerIds) db.prepare('DELETE FROM freelancers WHERE id = ?').run(id);
+    for (const id of demoClientIds) db.prepare('DELETE FROM clients WHERE id = ?').run(id);
+    db.exec('COMMIT;');
+
+    recordActivity(null, null, 'Agency Director', 'demo_data_purged', 'Purged initial demo records for clean workspace.');
+    res.json({ success: true, message: 'Fictional demo records successfully removed.' });
+  } catch (err: any) {
+    db.exec('ROLLBACK;');
+    res.status(500).json({ error: 'Failed to purge demo data' });
   }
 });

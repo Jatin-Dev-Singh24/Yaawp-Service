@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { YLogo } from '../YLogo';
-import { Lock, Mail, ArrowRight, ShieldCheck, KeyRound } from 'lucide-react';
+import { Lock, Mail, ArrowRight, ShieldCheck, KeyRound, AlertTriangle } from 'lucide-react';
 import { agencyApi } from '../../services/agencyApi';
 import { AgencyUser } from '../../types/admin';
 
@@ -10,10 +10,29 @@ interface AdminLoginProps {
 }
 
 export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onBackToSite }) => {
-  const [email, setEmail] = useState('admin@yaawp.com');
-  const [password, setPassword] = useState('yaawp_admin_2026!');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [authConfig, setAuthConfig] = useState<{
+    allowDemoCredentials: boolean;
+    hasConfiguredAdmin: boolean;
+    isProduction: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    agencyApi
+      .getAuthConfig()
+      .then((cfg) => setAuthConfig(cfg))
+      .catch(() => {
+        // Fallback default
+        setAuthConfig({
+          allowDemoCredentials: import.meta.env.DEV,
+          hasConfiguredAdmin: true,
+          isProduction: !import.meta.env.DEV,
+        });
+      });
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,7 +40,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onBackToSite 
     setIsLoading(true);
 
     try {
-      const res = await agencyApi.login(email, password);
+      const res = await agencyApi.login(email.trim(), password);
       if (res.user) {
         onSuccess(res.user);
       }
@@ -37,6 +56,9 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onBackToSite 
     setPassword('yaawp_admin_2026!');
   };
 
+  // Only expose demo credentials in development mode and if server confirms it is allowed
+  const showDemoBox = import.meta.env.DEV && authConfig?.allowDemoCredentials;
+
   return (
     <div className="min-h-screen bg-[#FAF8F5] text-[#191816] flex flex-col justify-between p-4 sm:p-8">
       {/* Top Bar */}
@@ -49,7 +71,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onBackToSite 
         </div>
         <button
           onClick={onBackToSite}
-          className="text-xs text-[#5C5853] hover:text-[#191816] font-medium tracking-wide transition-colors"
+          className="text-xs text-[#5C5853] hover:text-[#191816] font-medium tracking-wide transition-colors cursor-pointer"
         >
           ← Return to public website
         </button>
@@ -70,6 +92,17 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onBackToSite 
           </p>
         </div>
 
+        {authConfig && !authConfig.hasConfiguredAdmin && (
+          <div className="mb-6 p-3.5 bg-amber-50 border border-amber-200 text-amber-900 text-xs rounded-sm flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-semibold block mb-0.5">Admin Account Required</span>
+              Configure <code className="bg-amber-100 px-1 py-0.5 rounded text-[11px]">ADMIN_EMAIL</code> and{' '}
+              <code className="bg-amber-100 px-1 py-0.5 rounded text-[11px]">ADMIN_PASSWORD</code> in your environment variables/secrets.
+            </div>
+          </div>
+        )}
+
         {error && (
           <div className="mb-6 p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-sm">
             {error}
@@ -88,7 +121,8 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onBackToSite 
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@yaawp.com"
+                placeholder="director@yaawp.com"
+                autoComplete="email"
                 className="w-full pl-9 pr-3 py-2.5 bg-[#FAF8F5] border border-[#DDD7CD] rounded-sm text-sm text-[#191816] focus:border-[#581825] focus:outline-none transition-colors"
               />
             </div>
@@ -106,6 +140,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onBackToSite 
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••••••"
+                autoComplete="current-password"
                 className="w-full pl-9 pr-3 py-2.5 bg-[#FAF8F5] border border-[#DDD7CD] rounded-sm text-sm text-[#191816] focus:border-[#581825] focus:outline-none transition-colors"
               />
             </div>
@@ -127,28 +162,31 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onBackToSite 
           </button>
         </form>
 
-        <div className="mt-8 pt-6 border-t border-[#E8E2D8] bg-[#FAF8F5] -mx-8 -mb-8 p-6 rounded-b-sm">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-[#581825] block mb-1">
-                Demo Director Account
-              </span>
-              <p className="text-xs text-[#5C5853]">
-                Email: <code className="text-[#191816] font-mono">admin@yaawp.com</code>
-                <br />
-                Pass: <code className="text-[#191816] font-mono">yaawp_admin_2026!</code>
-              </p>
+        {/* Development Mode Demo Credentials - Strictly excluded from production */}
+        {showDemoBox && (
+          <div className="mt-8 pt-6 border-t border-[#E8E2D8] bg-[#FAF8F5] -mx-8 -mb-8 p-6 rounded-b-sm">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-[#581825] block mb-1">
+                  Development Demo Account
+                </span>
+                <p className="text-xs text-[#5C5853]">
+                  Email: <code className="text-[#191816] font-mono">admin@yaawp.com</code>
+                  <br />
+                  Pass: <code className="text-[#191816] font-mono">yaawp_admin_2026!</code>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleFillDemo}
+                className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#581825] hover:underline cursor-pointer"
+              >
+                <KeyRound className="w-3 h-3" />
+                <span>Fill</span>
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={handleFillDemo}
-              className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#581825] hover:underline cursor-pointer"
-            >
-              <KeyRound className="w-3 h-3" />
-              <span>Fill</span>
-            </button>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Footer */}

@@ -167,32 +167,63 @@ export function initDatabase() {
     );
   `);
 
-  const adminEmail = process.env.ADMIN_EMAIL || 'admin@yaawp.com';
-  const adminPassword = process.env.ADMIN_PASSWORD || 'yaawp_admin_2026!';
-  
-  const existingAdmin = db.prepare('SELECT id FROM users WHERE email = ?').get(adminEmail) as { id: string } | undefined;
-  if (!existingAdmin) {
+  const isDev = process.env.NODE_ENV !== 'production' || process.env.DEMO_MODE === 'true';
+  const hasEnvCredentials = Boolean(process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD);
+
+  if (hasEnvCredentials) {
+    const adminEmail = process.env.ADMIN_EMAIL!.trim().toLowerCase();
+    const adminPassword = process.env.ADMIN_PASSWORD!;
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = crypto.scryptSync(adminPassword, salt, 64).toString('hex');
-    const id = 'usr_' + crypto.randomUUID();
-    db.prepare(`
-      INSERT INTO users (id, email, password_hash, salt, name, role, created_at)
-      VALUES (?, ?, ?, ?, ?, 'admin', ?)
-    `).run(id, adminEmail, hash, salt, 'Agency Director', new Date().toISOString());
+    const existingAdmin = db.prepare('SELECT id FROM users WHERE LOWER(email) = ?').get(adminEmail) as { id: string } | undefined;
+    if (!existingAdmin) {
+      const id = 'usr_' + crypto.randomUUID();
+      db.prepare(`
+        INSERT INTO users (id, email, password_hash, salt, name, role, created_at)
+        VALUES (?, ?, ?, ?, ?, 'admin', ?)
+      `).run(id, adminEmail, hash, salt, 'Agency Director', new Date().toISOString());
+      console.log(`[YAAWP Auth] Configured administrator account for: ${adminEmail}`);
+    } else {
+      db.prepare('UPDATE users SET password_hash = ?, salt = ? WHERE id = ?').run(hash, salt, existingAdmin.id);
+    }
+  } else if (isDev) {
+    // Only in development or demo mode
+    const devEmail = 'admin@yaawp.com';
+    const devPass = 'yaawp_admin_2026!';
+    const existingAdmin = db.prepare('SELECT id FROM users WHERE email = ?').get(devEmail) as { id: string } | undefined;
+    if (!existingAdmin) {
+      const salt = crypto.randomBytes(16).toString('hex');
+      const hash = crypto.scryptSync(devPass, salt, 64).toString('hex');
+      const id = 'usr_' + crypto.randomUUID();
+      db.prepare(`
+        INSERT INTO users (id, email, password_hash, salt, name, role, created_at)
+        VALUES (?, ?, ?, ?, ?, 'admin', ?)
+      `).run(id, devEmail, hash, salt, 'Agency Director (Dev)', new Date().toISOString());
+      console.log('[YAAWP Auth] Development demo administrator initialized.');
+    }
+  } else {
+    console.warn('[YAAWP Auth] Security notice: Production environment detected without ADMIN_EMAIL and ADMIN_PASSWORD. No default credentials created.');
   }
 
-  const existingAgencyEmail = db.prepare("SELECT value FROM settings WHERE key = 'agency_notification_email'").get();
+  // Sync Agency Notification Email without hard-coded personal email addresses
+  const existingAgencyEmail = db.prepare("SELECT value FROM settings WHERE key = 'agency_notification_email'").get() as { value: string } | undefined;
+  const configuredEmail = process.env.AGENCY_NOTIFICATION_EMAIL?.trim() || '';
   if (!existingAgencyEmail) {
-    db.prepare("INSERT INTO settings (key, value) VALUES ('agency_notification_email', ?)").run(
-      process.env.AGENCY_NOTIFICATION_EMAIL || 'retroindian644@gmail.com'
-    );
+    db.prepare("INSERT INTO settings (key, value) VALUES ('agency_notification_email', ?)").run(configuredEmail);
     db.prepare("INSERT INTO settings (key, value) VALUES ('agency_currency', 'USD')").run();
     db.prepare("INSERT INTO settings (key, value) VALUES ('notify_on_lead', 'true')").run();
     db.prepare("INSERT INTO settings (key, value) VALUES ('notify_on_review', 'true')").run();
     db.prepare("INSERT INTO settings (key, value) VALUES ('notify_on_overdue', 'true')").run();
+  } else if (configuredEmail && existingAgencyEmail.value !== configuredEmail) {
+    db.prepare("UPDATE settings SET value = ? WHERE key = 'agency_notification_email'").run(configuredEmail);
   }
 
-  seedInitialDataIfEmpty();
+  // Only seed fictional demo data in development / demo mode
+  if (isDev) {
+    seedInitialDataIfEmpty();
+  } else {
+    console.log('[YAAWP Database] Production environment: Preserving real data only (no fictional demo records seeded).');
+  }
 }
 
 function seedInitialDataIfEmpty() {

@@ -450,6 +450,7 @@ export const AdminWorkspacePage: React.FC<AdminWorkspacePageProps> = ({ onReturn
             settings={settings}
             counts={systemCounts}
             onUpdateSettings={handleUpdateSettings}
+            onReloadData={loadAllData}
           />
         )}
       </main>

@@ -379,6 +379,35 @@ class AgencyApiService {
   getExportUrl(type: string, format: 'json' | 'csv' = 'csv') {
     return `/api/admin/export/${type}?format=${format}`;
   }
+
+  // --- Auth & Diagnostics ---
+  async getAuthConfig() {
+    return this.request<{ allowDemoCredentials: boolean; hasConfiguredAdmin: boolean; isProduction: boolean }>('/api/auth/config');
+  }
+
+  async getEmailStatus() {
+    return this.request<{
+      configured: boolean;
+      recipientConfigured: boolean;
+      recipientEmail: string | null;
+      provider: string;
+      fromEmail: string;
+      missingFields: string[];
+    }>('/api/admin/system/email-status');
+  }
+
+  async testEmail(recipient?: string) {
+    return this.request<{ success: boolean; message?: string; messageId?: string }>('/api/admin/system/test-email', {
+      method: 'POST',
+      body: JSON.stringify({ recipient }),
+    });
+  }
+
+  async purgeDemoData() {
+    return this.request<{ success: boolean; message: string }>('/api/admin/system/purge-demo-data', {
+      method: 'POST',
+    });
+  }
 }
 
 export const agencyApi = new AgencyApiService();
