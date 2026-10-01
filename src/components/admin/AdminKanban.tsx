@@ -39,7 +39,7 @@ const KANBAN_COLUMNS: { id: TaskStatus; label: string; description: string; head
   { id: 'To Do', label: 'To Do', description: 'Ready for specialist', headerColor: 'border-t-blue-500' },
   { id: 'In Progress', label: 'In Progress', description: 'Under active execution', headerColor: 'border-t-amber-500' },
   { id: 'Needs Review', label: 'Needs Review', description: 'Awaiting agency QA', headerColor: 'border-t-[#581825]' },
-  { id: 'Revisions Requested', label: 'Revisions Requested', description: 'Feedback sent back', headerColor: 'border-t-orange-600' },
+  { id: 'Revision Requested', label: 'Revision Requested', description: 'Feedback sent back', headerColor: 'border-t-orange-600' },
   { id: 'Approved / Done', label: 'Approved / Done', description: 'Verified & completed', headerColor: 'border-t-emerald-600' },
 ];
 
@@ -389,7 +389,7 @@ export const AdminKanban: React.FC<AdminKanbanProps> = ({
                           {task.title}
                         </h4>
 
-                        {task.status === 'Revisions Requested' && task.revision_instructions && (
+                        {task.status === 'Revision Requested' && task.revision_instructions && (
                           <div className="p-1.5 bg-orange-50 border border-orange-200 text-orange-800 text-[10px] rounded-xs mb-2 line-clamp-2">
                             <strong>Note:</strong> {task.revision_instructions}
                           </div>
@@ -783,7 +783,7 @@ export const AdminKanban: React.FC<AdminKanbanProps> = ({
                     if (inspectingTask?.id === revisionModalTask.id) {
                       setInspectingTask({
                         ...inspectingTask,
-                        status: 'Revisions Requested',
+                        status: 'Revision Requested',
                         revision_instructions: revisionInstructions.trim(),
                       });
                     }

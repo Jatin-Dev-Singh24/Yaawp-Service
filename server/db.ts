@@ -167,6 +167,12 @@ export function initDatabase() {
     );
   `);
 
+  // Lightweight schema upgrades for project files, task files, and lead internal notes
+  try { db.exec(`ALTER TABLE leads ADD COLUMN internal_notes TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE projects ADD COLUMN files_json TEXT;`); } catch {}
+  try { db.exec(`ALTER TABLE tasks ADD COLUMN files_json TEXT;`); } catch {}
+  try { db.exec(`UPDATE users SET role = 'owner' WHERE role = 'admin';`); } catch {}
+
   const isDev = process.env.NODE_ENV !== 'production' || process.env.DEMO_MODE === 'true';
   const hasEnvCredentials = Boolean(process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD);
 
@@ -180,11 +186,11 @@ export function initDatabase() {
       const id = 'usr_' + crypto.randomUUID();
       db.prepare(`
         INSERT INTO users (id, email, password_hash, salt, name, role, created_at)
-        VALUES (?, ?, ?, ?, ?, 'admin', ?)
-      `).run(id, adminEmail, hash, salt, 'Agency Director', new Date().toISOString());
-      console.log(`[YAAWP Auth] Configured administrator account for: ${adminEmail}`);
+        VALUES (?, ?, ?, ?, ?, 'owner', ?)
+      `).run(id, adminEmail, hash, salt, 'Agency Owner', new Date().toISOString());
+      console.log(`[YAAWP Auth] Configured agency owner account for: ${adminEmail}`);
     } else {
-      db.prepare('UPDATE users SET password_hash = ?, salt = ? WHERE id = ?').run(hash, salt, existingAdmin.id);
+      db.prepare("UPDATE users SET password_hash = ?, salt = ?, role = 'owner' WHERE id = ?").run(hash, salt, existingAdmin.id);
     }
   } else if (isDev) {
     // Only in development or demo mode
@@ -197,9 +203,11 @@ export function initDatabase() {
       const id = 'usr_' + crypto.randomUUID();
       db.prepare(`
         INSERT INTO users (id, email, password_hash, salt, name, role, created_at)
-        VALUES (?, ?, ?, ?, ?, 'admin', ?)
-      `).run(id, devEmail, hash, salt, 'Agency Director (Dev)', new Date().toISOString());
-      console.log('[YAAWP Auth] Development demo administrator initialized.');
+        VALUES (?, ?, ?, ?, ?, 'owner', ?)
+      `).run(id, devEmail, hash, salt, 'Agency Owner (Dev)', new Date().toISOString());
+      console.log('[YAAWP Auth] Development demo owner administrator initialized.');
+    } else {
+      db.prepare("UPDATE users SET role = 'owner' WHERE id = ?").run(existingAdmin.id);
     }
   } else {
     console.warn('[YAAWP Auth] Security notice: Production environment detected without ADMIN_EMAIL and ADMIN_PASSWORD. No default credentials created.');

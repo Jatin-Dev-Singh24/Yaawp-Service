@@ -10,6 +10,7 @@ import {
   TaskChecklist,
   TaskComment,
   TaskItem,
+  TeamMember,
 } from '../types/admin';
 
 class AgencyApiService {
@@ -154,7 +155,18 @@ class AgencyApiService {
     });
   }
 
-  async convertLead(id: string, options: { createProject?: boolean; projectName?: string; budget?: string; deadline?: string }) {
+  async convertLead(
+    id: string,
+    options: {
+      createProject?: boolean;
+      projectName?: string;
+      budget?: string;
+      deadline?: string;
+      specialistIds?: string[];
+      initialTasks?: string[];
+      status?: string;
+    }
+  ) {
     return this.request<{ success: boolean; clientId: string; projectId?: string }>(`/api/admin/leads/${id}/convert`, {
       method: 'POST',
       body: JSON.stringify(options),
@@ -406,6 +418,31 @@ class AgencyApiService {
   async purgeDemoData() {
     return this.request<{ success: boolean; message: string }>('/api/admin/system/purge-demo-data', {
       method: 'POST',
+    });
+  }
+
+  // --- Team Access & Roles (Owner Only) ---
+  async getTeamMembers(): Promise<TeamMember[]> {
+    return this.request<TeamMember[]>('/api/admin/team');
+  }
+
+  async createTeamMember(data: { name: string; email: string; password: string; role?: 'owner' | 'pm' }) {
+    return this.request<{ success: boolean; member: TeamMember }>('/api/admin/team', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateTeamMember(id: string, data: { name?: string; role?: 'owner' | 'pm'; password?: string }) {
+    return this.request<{ success: boolean }>(`/api/admin/team/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteTeamMember(id: string) {
+    return this.request<{ success: boolean }>(`/api/admin/team/${id}`, {
+      method: 'DELETE',
     });
   }
 }

@@ -50,6 +50,16 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+function requireOwner(req: Request, res: Response, next: NextFunction) {
+  requireAdmin(req, res, () => {
+    const user = (req as any).user;
+    if (user?.role !== 'owner' && user?.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied: Owner privileges required.' });
+    }
+    next();
+  });
+}
+
 function recordActivity(projectId: string | null, taskId: string | null, actorName: string, actionType: string, description: string) {
   const id = 'act_' + crypto.randomUUID();
   db.prepare(`
@@ -136,7 +146,15 @@ apiRouter.post('/public/inquiry', (req: Request, res: Response) => {
 
 apiRouter.post('/public/specialist-apply', (req: Request, res: Response) => {
   try {
-    const { fullName, email, discipline, portfolioUrl, yearsOfExperience, weeklyAvailability, primarySkills, briefBio } = req.body;
+    const fullName = (req.body.fullName || req.body.name || '').trim();
+    const email = (req.body.email || '').trim().toLowerCase();
+    const discipline = (req.body.discipline || req.body.primarySkill || '').trim();
+    const portfolioUrl = (req.body.portfolioUrl || req.body.portfolio || '').trim();
+    const yearsOfExperience = req.body.yearsOfExperience || req.body.yearsExperience || null;
+    const weeklyAvailability = req.body.weeklyAvailability || null;
+    const primarySkills = req.body.primarySkills || req.body.skills || req.body.secondarySkills || null;
+    const briefBio = req.body.briefBio || req.body.bio || null;
+
     if (!fullName || !email || !discipline || !portfolioUrl) {
       return res.status(400).json({ error: 'Full name, email, discipline, and portfolio URL are required.' });
     }
@@ -410,7 +428,10 @@ apiRouter.patch('/admin/leads/:id', requireAdmin, (req: Request, res: Response) 
     const fields = req.body;
     const now = new Date().toISOString();
 
-    const allowed = ['name', 'email', 'company', 'service', 'budget_range', 'timeline', 'project_details', 'website_or_social', 'status'];
+    const allowed = [
+      'name', 'email', 'company', 'service', 'budget_range',
+      'timeline', 'project_details', 'website_or_social', 'status', 'internal_notes'
+    ];
     const updates: string[] = ['updated_at = ?'];
     const values: any[] = [now];
 
@@ -425,7 +446,8 @@ apiRouter.patch('/admin/leads/:id', requireAdmin, (req: Request, res: Response) 
     db.prepare(`UPDATE leads SET ${updates.join(', ')} WHERE id = ?`).run(...values);
 
     if (fields.status) {
-      recordActivity(null, null, 'Agency Director', 'lead_status_changed', `Updated lead status to "${fields.status}" for lead ${id}`);
+      const actor = (req as any).user?.name || 'Workspace Lead';
+      recordActivity(null, null, actor, 'lead_status_changed', `Updated quote status to "${fields.status}" for lead ${id}`);
     }
 
     res.json({ success: true });
@@ -437,12 +459,23 @@ apiRouter.patch('/admin/leads/:id', requireAdmin, (req: Request, res: Response) 
 apiRouter.post('/admin/leads/:id/convert', requireAdmin, (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { createProject, projectName, budget, deadline } = req.body;
+    const {
+      createProject,
+      projectName,
+      budget,
+      projectBudget,
+      deadline,
+      projectDeadline,
+      specialistIds,
+      initialTasks,
+      status
+    } = req.body;
 
     const lead = db.prepare('SELECT * FROM leads WHERE id = ?').get(id) as any;
     if (!lead) return res.status(404).json({ error: 'Lead not found' });
 
     const now = new Date().toISOString();
+    const actorName = (req as any).user?.name || 'Workspace Lead';
 
     // Check if client already exists with same email
     let clientId: string;
@@ -459,7 +492,7 @@ apiRouter.post('/admin/leads/:id/convert', requireAdmin, (req: Request, res: Res
         lead.name,
         lead.email,
         lead.company,
-        `Converted from lead (${lead.service}). Brief: ${lead.project_details || 'N/A'}`,
+        `Converted from inquiry (${lead.service}). Brief: ${lead.project_details || 'N/A'}${lead.internal_notes ? ` | Notes: ${lead.internal_notes}` : ''}`,
         now,
         now
       );
@@ -468,6 +501,9 @@ apiRouter.post('/admin/leads/:id/convert', requireAdmin, (req: Request, res: Res
     let projectId: string | undefined = undefined;
     if (createProject) {
       projectId = 'prj_' + crypto.randomUUID();
+      const effectiveBudget = projectBudget || budget || lead.budget_range || null;
+      const effectiveDeadline = projectDeadline || deadline || null;
+
       db.prepare(`
         INSERT INTO projects (
           id, client_id, name, description, services, deadline,
@@ -479,26 +515,61 @@ apiRouter.post('/admin/leads/:id/convert', requireAdmin, (req: Request, res: Res
         projectName || `${lead.company || lead.name} — ${lead.service}`,
         lead.project_details || null,
         lead.service,
-        deadline || null,
-        budget || lead.budget_range || null,
-        `Originating from lead conversion on ${new Date().toLocaleDateString()}`,
+        effectiveDeadline,
+        effectiveBudget,
+        lead.internal_notes ? `Notes from lead intake: ${lead.internal_notes}` : `Originating from quote conversion on ${new Date().toLocaleDateString()}`,
         now,
         now
       );
+
+      // Assign initial specialists if provided
+      if (Array.isArray(specialistIds)) {
+        for (const spcId of specialistIds) {
+          if (spcId) {
+            db.prepare(`
+              INSERT OR IGNORE INTO project_freelancers (project_id, freelancer_id, role_in_project, created_at)
+              VALUES (?, ?, 'Assigned Specialist', ?)
+            `).run(projectId, spcId, now);
+          }
+        }
+      }
+
+      // Create initial deliverable tasks if provided
+      if (Array.isArray(initialTasks)) {
+        let orderIdx = 0;
+        for (const item of initialTasks) {
+          const taskTitle = typeof item === 'string' ? item.trim() : (item?.title || '').trim();
+          const taskPriority = typeof item === 'object' && item?.priority ? item.priority : 'Medium';
+          const taskSpecialistId = typeof item === 'object' && (item?.freelancer_id || item?.assigned_freelancer_id) ? (item.freelancer_id || item.assigned_freelancer_id) : null;
+          
+          if (taskTitle) {
+            const taskId = 'tsk_' + crypto.randomUUID();
+            db.prepare(`
+              INSERT INTO tasks (
+                id, project_id, title, status, priority, assigned_freelancer_id, order_index, created_at, updated_at
+              ) VALUES (?, ?, ?, 'To Do', ?, ?, ?, ?, ?)
+            `).run(taskId, projectId, taskTitle, taskPriority, taskSpecialistId, orderIdx++, now, now);
+          }
+        }
+      }
     }
 
-    // Mark lead as converted
-    db.prepare("UPDATE leads SET status = 'Converted', updated_at = ? WHERE id = ?").run(now, id);
+    // Mark lead as Accepted (or Converted)
+    const targetStatus = status || 'Accepted';
+    db.prepare("UPDATE leads SET status = ?, updated_at = ? WHERE id = ?").run(targetStatus, now, id);
 
     recordActivity(
       projectId || null,
       null,
-      'Agency Director',
+      actorName,
       'lead_converted',
-      `Converted lead "${lead.name}" into client and initialized workspace records`
+      `Converted quote "${lead.name}" into client and initialized project workspace`
     );
 
-    res.json({ success: true, clientId, projectId });
+    const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(clientId);
+    const project = projectId ? db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) : null;
+
+    res.json({ success: true, clientId, projectId, client, project });
   } catch (err: any) {
     console.error('Lead conversion failed:', err);
     res.status(500).json({ error: 'Failed to convert lead' });
@@ -848,7 +919,14 @@ apiRouter.get('/admin/projects/:id', requireAdmin, (req: Request, res: Response)
       ORDER BY t.order_index ASC, t.deadline ASC
     `).all(id);
 
-    res.json({ project, specialists, tasks });
+    const activity = db.prepare(`
+      SELECT * FROM activity_events
+      WHERE project_id = ?
+      ORDER BY created_at DESC
+      LIMIT 25
+    `).all(id);
+
+    res.json({ project, specialists, tasks, activity });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to load project details' });
   }
@@ -862,7 +940,7 @@ apiRouter.patch('/admin/projects/:id', requireAdmin, (req: Request, res: Respons
 
     const allowed = [
       'name', 'client_id', 'description', 'services', 'start_date', 'deadline',
-      'budget_value', 'status', 'internal_notes', 'client_notes'
+      'budget_value', 'status', 'internal_notes', 'client_notes', 'files_json'
     ];
     const updates: string[] = ['updated_at = ?'];
     const values: any[] = [now];
@@ -1042,7 +1120,7 @@ apiRouter.patch('/admin/tasks/:id', requireAdmin, (req: Request, res: Response) 
 
     const allowed = [
       'title', 'description', 'assigned_freelancer_id', 'status',
-      'priority', 'deadline', 'order_index', 'revision_instructions', 'internal_notes'
+      'priority', 'deadline', 'order_index', 'revision_instructions', 'internal_notes', 'files_json'
     ];
     const updates: string[] = ['updated_at = ?'];
     const values: any[] = [now];
@@ -1060,7 +1138,8 @@ apiRouter.patch('/admin/tasks/:id', requireAdmin, (req: Request, res: Response) 
     const updatedTask = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as any;
 
     if (fields.status) {
-      recordActivity(updatedTask.project_id, id, 'Agency Director', 'task_status_changed', `Moved task "${updatedTask.title}" to "${fields.status}"`);
+      const actorName = (req as any).user?.name || 'Workspace Lead';
+      recordActivity(updatedTask.project_id, id, actorName, 'task_status_changed', `Moved task "${updatedTask.title}" to "${fields.status}"`);
 
       if (fields.status === 'Needs Review') {
         recordNotification('Task Awaiting Review', `Deliverable "${updatedTask.title}" submitted and awaiting agency review.`, 'task', id);
@@ -1076,19 +1155,40 @@ apiRouter.patch('/admin/tasks/:id', requireAdmin, (req: Request, res: Response) 
 apiRouter.post('/admin/tasks/:id/request-revision', requireAdmin, (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const revision_instructions = req.body.revision_instructions || req.body.instructions;
+    const revision_instructions = req.body.revision_instructions || req.body.revisionInstructions || req.body.instructions;
     const now = new Date().toISOString();
 
     db.prepare(`
       UPDATE tasks
-      SET status = 'Revisions Requested', revision_instructions = ?, updated_at = ?
+      SET status = 'Revision Requested', revision_instructions = ?, updated_at = ?
       WHERE id = ?
     `).run(revision_instructions || 'Please review feedback notes and submit revision.', now, id);
 
     const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as any;
     recordActivity(task?.project_id || null, id, 'Agency Director', 'revision_requested', `Requested revisions on task "${task?.title}"`);
 
-    res.json({ success: true });
+    res.json({ success: true, task });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to request revision' });
+  }
+});
+
+apiRouter.post('/admin/tasks/:id/revision', requireAdmin, (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const revision_instructions = req.body.revision_instructions || req.body.revisionInstructions || req.body.instructions;
+    const now = new Date().toISOString();
+
+    db.prepare(`
+      UPDATE tasks
+      SET status = 'Revision Requested', revision_instructions = ?, updated_at = ?
+      WHERE id = ?
+    `).run(revision_instructions || 'Please review feedback notes and submit revision.', now, id);
+
+    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as any;
+    recordActivity(task?.project_id || null, id, 'Agency Director', 'revision_requested', `Requested revisions on task "${task?.title}"`);
+
+    res.json({ success: true, task });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to request revision' });
   }
@@ -1108,7 +1208,7 @@ apiRouter.post('/admin/tasks/:id/approve', requireAdmin, (req: Request, res: Res
     const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as any;
     recordActivity(task?.project_id || null, id, 'Agency Director', 'task_approved', `Approved deliverable for "${task?.title}"`);
 
-    res.json({ success: true });
+    res.json({ success: true, task });
   } catch (err: any) {
     res.status(500).json({ error: 'Failed to approve task' });
   }
@@ -1327,7 +1427,7 @@ apiRouter.get('/admin/settings', requireAdmin, (_req: Request, res: Response) =>
   }
 });
 
-apiRouter.patch('/admin/settings', requireAdmin, (req: Request, res: Response) => {
+apiRouter.patch('/admin/settings', requireOwner, (req: Request, res: Response) => {
   try {
     const { settings } = req.body;
     if (settings && typeof settings === 'object') {
@@ -1417,7 +1517,7 @@ apiRouter.get('/admin/system/email-status', requireAdmin, (_req: Request, res: R
   }
 });
 
-apiRouter.post('/admin/system/test-email', requireAdmin, async (req: Request, res: Response) => {
+apiRouter.post('/admin/system/test-email', requireOwner, async (req: Request, res: Response) => {
   try {
     const status = getEmailConfigStatus();
     if (!status.configured) {
@@ -1459,7 +1559,7 @@ apiRouter.post('/admin/system/test-email', requireAdmin, async (req: Request, re
   }
 });
 
-apiRouter.post('/admin/system/purge-demo-data', requireAdmin, (_req: Request, res: Response) => {
+apiRouter.post('/admin/system/purge-demo-data', requireOwner, (req: Request, res: Response) => {
   try {
     // Purge only seeded fictional records (prefixed with known demo IDs)
     const demoLeadIds = ['lead_elena', 'lead_marcus', 'lead_sophia', 'lead_henri', 'lead_clara_dupont'];
@@ -1474,10 +1574,140 @@ apiRouter.post('/admin/system/purge-demo-data', requireAdmin, (_req: Request, re
     for (const id of demoClientIds) db.prepare('DELETE FROM clients WHERE id = ?').run(id);
     db.exec('COMMIT;');
 
-    recordActivity(null, null, 'Agency Director', 'demo_data_purged', 'Purged initial demo records for clean workspace.');
+    const actor = (req as any).user?.name || 'Agency Owner';
+    recordActivity(null, null, actor, 'demo_data_purged', 'Purged initial demo records for clean workspace.');
     res.json({ success: true, message: 'Fictional demo records successfully removed.' });
   } catch (err: any) {
     db.exec('ROLLBACK;');
     res.status(500).json({ error: 'Failed to purge demo data' });
+  }
+});
+
+// ==========================================
+// 13. TEAM ACCESS & ROLES (Owner Only)
+// ==========================================
+
+apiRouter.get('/admin/team', requireOwner, (_req: Request, res: Response) => {
+  try {
+    const members = db.prepare(`
+      SELECT id, email, name, role, created_at
+      FROM users
+      ORDER BY created_at ASC
+    `).all();
+    res.json(members);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to load team members' });
+  }
+});
+
+apiRouter.post('/admin/team', requireOwner, (req: Request, res: Response) => {
+  try {
+    const { name, email, password, role } = req.body;
+    if (!name || !email || !password) {
+      return res.status(400).json({ error: 'Name, email, and password are required.' });
+    }
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters long.' });
+    }
+
+    const trimmedEmail = email.trim().toLowerCase();
+    const existing = db.prepare('SELECT id FROM users WHERE LOWER(email) = ?').get(trimmedEmail);
+    if (existing) {
+      return res.status(400).json({ error: 'A team account with this email already exists.' });
+    }
+
+    const count = (db.prepare('SELECT COUNT(*) as count FROM users').get() as any).count;
+    if (count >= 5) {
+      return res.status(400).json({ error: 'Team limit reached (maximum 5 workspace members allowed).' });
+    }
+
+    const assignedRole = role === 'owner' ? 'owner' : 'pm';
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+    const id = 'usr_' + crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    db.prepare(`
+      INSERT INTO users (id, email, password_hash, salt, name, role, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(id, trimmedEmail, hash, salt, name.trim(), assignedRole, now);
+
+    const actor = (req as any).user?.name || 'Owner';
+    recordActivity(null, null, actor, 'team_member_added', `Added ${assignedRole === 'owner' ? 'Owner' : 'Project Manager'} account: ${name} (${trimmedEmail})`);
+
+    res.json({
+      success: true,
+      member: {
+        id,
+        email: trimmedEmail,
+        name: name.trim(),
+        role: assignedRole,
+        created_at: now,
+      },
+    });
+  } catch (err: any) {
+    console.error('Failed to create team member:', err);
+    res.status(500).json({ error: 'Failed to create team member' });
+  }
+});
+
+apiRouter.patch('/admin/team/:id', requireOwner, (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { name, role, password } = req.body;
+    const targetUser = db.prepare('SELECT * FROM users WHERE id = ?').get(id) as any;
+    if (!targetUser) {
+      return res.status(404).json({ error: 'Team member not found' });
+    }
+
+    const currentUserId = (req as any).user.user_id;
+
+    if (name) {
+      db.prepare('UPDATE users SET name = ? WHERE id = ?').run(name.trim(), id);
+    }
+    if (role && (role === 'owner' || role === 'pm')) {
+      if (id === currentUserId && role !== 'owner') {
+        const ownerCount = (db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'owner'").get() as any).count;
+        if (ownerCount <= 1) {
+          return res.status(400).json({ error: 'Cannot remove owner role from the only workspace owner.' });
+        }
+      }
+      db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, id);
+    }
+    if (password && password.length >= 8) {
+      const salt = crypto.randomBytes(16).toString('hex');
+      const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+      db.prepare('UPDATE users SET password_hash = ?, salt = ? WHERE id = ?').run(hash, salt, id);
+      db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
+    }
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to update team member' });
+  }
+});
+
+apiRouter.delete('/admin/team/:id', requireOwner, (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const currentUserId = (req as any).user.user_id;
+    if (id === currentUserId) {
+      return res.status(400).json({ error: 'You cannot delete your own active owner account.' });
+    }
+
+    const targetUser = db.prepare('SELECT * FROM users WHERE id = ?').get(id) as any;
+    if (!targetUser) {
+      return res.status(404).json({ error: 'Team member not found' });
+    }
+
+    db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
+    db.prepare('DELETE FROM users WHERE id = ?').run(id);
+
+    const actor = (req as any).user?.name || 'Owner';
+    recordActivity(null, null, actor, 'team_member_removed', `Removed team account: ${targetUser.name} (${targetUser.email})`);
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Failed to delete team member' });
   }
 });

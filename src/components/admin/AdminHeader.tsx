@@ -46,11 +46,13 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({
   onLogout,
   onReturnToPublic,
 }) => {
+  const isOwner = user.role === 'owner' || user.role === 'admin';
+
   const tabs = [
     { id: 'dashboard' as AdminTab, label: 'Dashboard', icon: LayoutDashboard, badge: null },
     {
       id: 'leads' as AdminTab,
-      label: 'Leads',
+      label: 'Quotes / Leads',
       icon: Inbox,
       badge: metrics?.newLeads ? `${metrics.newLeads}` : null,
       badgeColor: 'bg-[#581825] text-white',
@@ -58,7 +60,7 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({
     { id: 'clients' as AdminTab, label: 'Clients', icon: Briefcase, badge: null },
     {
       id: 'freelancers' as AdminTab,
-      label: 'Specialists',
+      label: 'Freelancers',
       icon: Users2,
       badge: metrics?.newSpecialistApplications ? `${metrics.newSpecialistApplications}` : null,
       badgeColor: 'bg-[#8B5E3C] text-white',
@@ -72,7 +74,7 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({
     },
     {
       id: 'tasks' as AdminTab,
-      label: 'Kanban Tasks',
+      label: 'Tasks / Kanban',
       icon: CheckSquare,
       badge: metrics?.tasksAwaitingReview ? `${metrics.tasksAwaitingReview}` : null,
       badgeColor: 'bg-[#C2410C] text-white animate-pulse',
@@ -86,12 +88,17 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({
     },
     {
       id: 'notifications' as AdminTab,
-      label: 'Feed',
+      label: 'Notifications',
       icon: Bell,
       badge: unreadNotifications > 0 ? `${unreadNotifications}` : null,
       badgeColor: 'bg-[#581825] text-white',
     },
-    { id: 'settings' as AdminTab, label: 'Settings', icon: Settings, badge: null },
+    {
+      id: 'settings' as AdminTab,
+      label: isOwner ? 'Settings' : 'Settings (Restricted)',
+      icon: Settings,
+      badge: null,
+    },
   ];
 
   return (
@@ -101,10 +108,10 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({
           <YLogo size="xs" />
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold uppercase tracking-wider text-[#191816]">
-              YAAWP Studio
+              YAAWP Operations
             </span>
             <span className="text-[10px] px-1.5 py-0.5 bg-[#FAF8F5] border border-[#E2DDD5] text-[#5C5853] font-mono rounded">
-              Internal Command
+              Internal Workspace
             </span>
           </div>
         </div>
@@ -143,8 +150,19 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({
 
           <div className="flex items-center gap-3">
             <div className="text-right hidden md:block">
-              <div className="text-xs font-semibold text-[#191816] leading-none">{user.name}</div>
-              <div className="text-[10px] text-[#8C867E] leading-none mt-0.5">{user.email}</div>
+              <div className="flex items-center justify-end gap-1.5 leading-none">
+                <span className="text-xs font-semibold text-[#191816]">{user.name}</span>
+                <span
+                  className={`text-[9px] uppercase tracking-wider font-semibold px-1.5 py-0.2 rounded ${
+                    isOwner
+                      ? 'bg-[#581825]/10 text-[#581825] border border-[#581825]/20'
+                      : 'bg-amber-100 text-amber-900 border border-amber-200'
+                  }`}
+                >
+                  {isOwner ? 'Owner' : 'Project Manager'}
+                </span>
+              </div>
+              <div className="text-[10px] text-[#8C867E] leading-none mt-1">{user.email}</div>
             </div>
             <button
               onClick={onLogout}

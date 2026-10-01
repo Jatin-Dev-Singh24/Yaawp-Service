@@ -1,4 +1,12 @@
-export type LeadStatus = 'New' | 'Contacted' | 'In Discussion' | 'Converted' | 'Archived';
+export type LeadStatus =
+  | 'New'
+  | 'Reviewing'
+  | 'Accepted'
+  | 'Rejected'
+  | 'Archived'
+  | 'Contacted'
+  | 'In Discussion'
+  | 'Converted';
 
 export interface Lead {
   id: string;
@@ -11,6 +19,7 @@ export interface Lead {
   project_details: string | null;
   website_or_social: string | null;
   status: LeadStatus;
+  internal_notes?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -51,7 +60,16 @@ export interface Freelancer {
   updated_at: string;
 }
 
-export type ProjectStatus = 'Planning' | 'In Progress' | 'Review' | 'Completed' | 'On Hold' | 'Cancelled';
+export type ProjectStatus =
+  | 'Planning'
+  | 'In Progress'
+  | 'Needs Review'
+  | 'Revision Requested'
+  | 'Approved'
+  | 'Completed'
+  | 'On Hold'
+  | 'Review'
+  | 'Cancelled';
 
 export interface ProjectSpecialistLink {
   id: string;
@@ -76,6 +94,7 @@ export interface Project {
   status: ProjectStatus;
   internal_notes: string | null;
   client_notes: string | null;
+  files_json?: string | null;
   total_tasks?: number;
   completed_tasks?: number;
   review_tasks?: number;
@@ -89,7 +108,7 @@ export type TaskStatus =
   | 'To Do'
   | 'In Progress'
   | 'Needs Review'
-  | 'Revisions Requested'
+  | 'Revision Requested'
   | 'Approved / Done';
 
 export type TaskPriority = 'Low' | 'Medium' | 'High' | 'Urgent';
@@ -129,11 +148,20 @@ export interface TaskItem {
   order_index: number;
   revision_instructions: string | null;
   internal_notes: string | null;
+  files_json?: string | null;
   checklist_total?: number;
   checklist_completed?: number;
   comment_count?: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface TeamMember {
+  id: string;
+  email: string;
+  name: string;
+  role: 'owner' | 'pm';
+  created_at: string;
 }
 
 export interface ActivityEvent {
