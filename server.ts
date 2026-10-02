@@ -1,8 +1,9 @@
 import express from 'express';
 import path from 'node:path';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { initDatabase } from './server/db';
-import { apiRouter } from './server/routes';
+import { initDatabase } from './server/db.ts';
+import { apiRouter } from './server/routes.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -25,9 +26,12 @@ async function startServer() {
   // Mount backend API router
   app.use('/api', apiRouter);
 
-  // In production, serve static built files from dist
-  if (process.env.NODE_ENV === 'production') {
-    const distPath = path.resolve(__dirname, 'dist');
+  // In production (or if dist exists and not explicitly in development mode), serve static built files
+  const distPath = path.resolve(__dirname, 'dist');
+  const hasDist = fs.existsSync(path.join(distPath, 'index.html'));
+  const isProduction = process.env.NODE_ENV === 'production' || (hasDist && process.env.NODE_ENV !== 'development');
+
+  if (isProduction && hasDist) {
     app.use(express.static(distPath));
     app.get('*', (_req, res) => {
       res.sendFile(path.resolve(distPath, 'index.html'));

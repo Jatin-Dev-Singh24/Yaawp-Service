@@ -1,12 +1,13 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import crypto from 'node:crypto';
-import { db } from './db';
+import { db } from './db.ts';
 import {
   sendClientInquiryEmail,
   sendFreelancerApplicationEmail,
   getEmailConfigStatus,
   getAgencyNotificationEmail,
-} from './email';
+} from './email.ts';
 
 export const apiRouter = Router();
 
@@ -240,6 +241,12 @@ apiRouter.post('/auth/login', (req: Request, res: Response) => {
     const user = db.prepare('SELECT * FROM users WHERE LOWER(email) = ?').get(trimmedEmail) as any;
 
     if (!user) {
+      const totalUsers = (db.prepare('SELECT count(*) as c FROM users').get() as any)?.c || 0;
+      if (totalUsers === 0) {
+        return res.status(401).json({
+          error: 'No administrator accounts have been initialized. Please configure ADMIN_EMAIL and ADMIN_PASSWORD in environment variables/secrets and restart the deployment.',
+        });
+      }
       return res.status(401).json({ error: 'Invalid email or credentials' });
     }
 
@@ -321,10 +328,11 @@ apiRouter.get('/auth/me', (req: Request, res: Response) => {
 
 apiRouter.get('/auth/config', (_req: Request, res: Response) => {
   const isDev = process.env.NODE_ENV !== 'production' || process.env.DEMO_MODE === 'true';
-  const adminUser = db.prepare('SELECT email FROM users WHERE role = ? LIMIT 1').get('admin') as { email: string } | undefined;
+  const adminUser = db.prepare("SELECT email FROM users WHERE role = 'owner' ORDER BY created_at DESC LIMIT 1").get() as { email: string } | undefined;
   res.json({
     allowDemoCredentials: isDev,
     hasConfiguredAdmin: Boolean(adminUser),
+    configuredEmail: adminUser?.email || null,
     isProduction: process.env.NODE_ENV === 'production',
   });
 });

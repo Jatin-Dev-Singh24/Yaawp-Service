@@ -14,6 +14,23 @@ export const db = new DatabaseSync(DB_PATH);
 db.exec('PRAGMA journal_mode = WAL;');
 db.exec('PRAGMA foreign_keys = ON;');
 
+// Helper to look up environment variables across exact names, case variations, and common punctuation (e.g. "Admin email" vs "ADMIN_EMAIL")
+export function resolveEnvValue(...preferredKeys: string[]): string | undefined {
+  for (const key of preferredKeys) {
+    const val = process.env[key];
+    if (val && typeof val === 'string' && val.trim()) return val.trim();
+  }
+  const normalizedTargets = preferredKeys.map((k) => k.toLowerCase().replace(/[\s_-]/g, ''));
+  for (const [key, val] of Object.entries(process.env)) {
+    if (!val || typeof val !== 'string' || !val.trim()) continue;
+    const normalizedKey = key.toLowerCase().replace(/[\s_-]/g, '');
+    if (normalizedTargets.includes(normalizedKey)) {
+      return val.trim();
+    }
+  }
+  return undefined;
+}
+
 export function initDatabase() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -174,11 +191,13 @@ export function initDatabase() {
   try { db.exec(`UPDATE users SET role = 'owner' WHERE role = 'admin';`); } catch {}
 
   const isDev = process.env.NODE_ENV !== 'production' || process.env.DEMO_MODE === 'true';
-  const hasEnvCredentials = Boolean(process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD);
+  const envAdminEmail = resolveEnvValue('ADMIN_EMAIL', 'ADMIN_MAIL', 'AGENCY_ADMIN_EMAIL', 'OWNER_EMAIL', 'ADMINISTRATOR_EMAIL', 'ADMIN_USER', 'ADMIN');
+  const envAdminPassword = resolveEnvValue('ADMIN_PASSWORD', 'ADMIN_PASS', 'AGENCY_ADMIN_PASSWORD', 'OWNER_PASSWORD', 'ADMIN_PW', 'PASSWORD');
+  const hasEnvCredentials = Boolean(envAdminEmail && envAdminPassword);
 
   if (hasEnvCredentials) {
-    const adminEmail = process.env.ADMIN_EMAIL!.trim().toLowerCase();
-    const adminPassword = process.env.ADMIN_PASSWORD!;
+    const adminEmail = envAdminEmail!.toLowerCase();
+    const adminPassword = envAdminPassword!;
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = crypto.scryptSync(adminPassword, salt, 64).toString('hex');
     const existingAdmin = db.prepare('SELECT id FROM users WHERE LOWER(email) = ?').get(adminEmail) as { id: string } | undefined;
@@ -191,6 +210,7 @@ export function initDatabase() {
       console.log(`[YAAWP Auth] Configured agency owner account for: ${adminEmail}`);
     } else {
       db.prepare("UPDATE users SET password_hash = ?, salt = ?, role = 'owner' WHERE id = ?").run(hash, salt, existingAdmin.id);
+      console.log(`[YAAWP Auth] Synced credentials for existing owner account: ${adminEmail}`);
     }
   } else if (isDev) {
     // Only in development or demo mode
@@ -210,12 +230,15 @@ export function initDatabase() {
       db.prepare("UPDATE users SET role = 'owner' WHERE id = ?").run(existingAdmin.id);
     }
   } else {
-    console.warn('[YAAWP Auth] Security notice: Production environment detected without ADMIN_EMAIL and ADMIN_PASSWORD. No default credentials created.');
+    const usersCount = (db.prepare('SELECT count(*) as c FROM users').get() as any)?.c || 0;
+    if (usersCount === 0) {
+      console.warn('[YAAWP Auth] Security notice: Production environment detected with 0 user accounts. Please configure ADMIN_EMAIL and ADMIN_PASSWORD in environment secrets.');
+    }
   }
 
   // Sync Agency Notification Email without hard-coded personal email addresses
   const existingAgencyEmail = db.prepare("SELECT value FROM settings WHERE key = 'agency_notification_email'").get() as { value: string } | undefined;
-  const configuredEmail = process.env.AGENCY_NOTIFICATION_EMAIL?.trim() || '';
+  const configuredEmail = resolveEnvValue('AGENCY_NOTIFICATION_EMAIL', 'NOTIFICATION_EMAIL', 'AGENCY_EMAIL', 'ADMIN_EMAIL') || '';
   if (!existingAgencyEmail) {
     db.prepare("INSERT INTO settings (key, value) VALUES ('agency_notification_email', ?)").run(configuredEmail);
     db.prepare("INSERT INTO settings (key, value) VALUES ('agency_currency', 'USD')").run();

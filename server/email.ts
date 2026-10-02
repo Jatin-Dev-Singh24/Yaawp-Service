@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer';
-import { db } from './db';
+import { db } from './db.ts';
 
 export interface ClientInquiryEmailData {
   id: string;

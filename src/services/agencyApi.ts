@@ -58,14 +58,30 @@ class AgencyApiService {
 
     if (response.status === 401) {
       this.setToken(null);
-      throw new Error('Unauthorized');
+      let errorMsg = 'Invalid email or password.';
+      try {
+        const errJson = await response.json();
+        if (errJson?.error) errorMsg = errJson.error;
+      } catch {
+        // use fallback
+      }
+      throw new Error(errorMsg);
     }
 
     if (!response.ok) {
-      let errMsg = `Request failed: ${response.statusText}`;
+      let errMsg = response.statusText ? `Request failed: ${response.statusText}` : `Request failed (HTTP ${response.status})`;
+      if (response.status === 404) {
+        errMsg = 'API route not found (404). The server may still be deploying or starting up.';
+      } else if (response.status === 502 || response.status === 503) {
+        errMsg = 'Backend service is restarting or unavailable. Please wait a moment and try again.';
+      }
+
       try {
-        const errJson = await response.json();
-        if (errJson?.error) errMsg = errJson.error;
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const errJson = await response.json();
+          if (errJson?.error) errMsg = errJson.error;
+        }
       } catch {
         // ignore
       }
@@ -394,7 +410,12 @@ class AgencyApiService {
 
   // --- Auth & Diagnostics ---
   async getAuthConfig() {
-    return this.request<{ allowDemoCredentials: boolean; hasConfiguredAdmin: boolean; isProduction: boolean }>('/api/auth/config');
+    return this.request<{
+      allowDemoCredentials: boolean;
+      hasConfiguredAdmin: boolean;
+      configuredEmail?: string | null;
+      isProduction: boolean;
+    }>('/api/auth/config');
   }
 
   async getEmailStatus() {

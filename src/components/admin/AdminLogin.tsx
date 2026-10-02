@@ -17,18 +17,25 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onBackToSite 
   const [authConfig, setAuthConfig] = useState<{
     allowDemoCredentials: boolean;
     hasConfiguredAdmin: boolean;
+    configuredEmail?: string | null;
     isProduction: boolean;
   } | null>(null);
 
   useEffect(() => {
     agencyApi
       .getAuthConfig()
-      .then((cfg) => setAuthConfig(cfg))
+      .then((cfg) => {
+        setAuthConfig(cfg);
+        if (cfg.configuredEmail) {
+          setEmail((prev) => (prev ? prev : cfg.configuredEmail!));
+        }
+      })
       .catch(() => {
         // Fallback default
         setAuthConfig({
           allowDemoCredentials: import.meta.env.DEV,
           hasConfiguredAdmin: true,
+          configuredEmail: null,
           isProduction: !import.meta.env.DEV,
         });
       });
@@ -100,6 +107,23 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onBackToSite 
               Configure <code className="bg-amber-100 px-1 py-0.5 rounded text-[11px]">ADMIN_EMAIL</code> and{' '}
               <code className="bg-amber-100 px-1 py-0.5 rounded text-[11px]">ADMIN_PASSWORD</code> in your environment variables/secrets.
             </div>
+          </div>
+        )}
+
+        {authConfig?.configuredEmail && (
+          <div className="mb-5 px-3 py-2 bg-[#581825]/5 border border-[#581825]/15 text-[#581825] text-xs rounded-sm flex items-center justify-between">
+            <span className="truncate">
+              Authorized Director: <strong>{authConfig.configuredEmail}</strong>
+            </span>
+            {email !== authConfig.configuredEmail && (
+              <button
+                type="button"
+                onClick={() => setEmail(authConfig.configuredEmail!)}
+                className="text-[11px] font-semibold text-[#581825] hover:underline cursor-pointer ml-2 shrink-0"
+              >
+                Autofill
+              </button>
+            )}
           </div>
         )}
 
