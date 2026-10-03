@@ -14,21 +14,26 @@ export const db = new DatabaseSync(DB_PATH);
 db.exec('PRAGMA journal_mode = WAL;');
 db.exec('PRAGMA foreign_keys = ON;');
 
-// Helper to look up environment variables across exact names, case variations, and common punctuation (e.g. "Admin email" vs "ADMIN_EMAIL")
-export function resolveEnvValue(...preferredKeys: string[]): string | undefined {
-  for (const key of preferredKeys) {
+// Explicit secret names allowed for production credentials and notification settings.
+// Only these exact keys are checked directly on process.env (no loose, fuzzy, or wildcard iteration).
+export const EXPLICIT_SECRET_NAMES = {
+  ADMIN_EMAIL: ['ADMIN_EMAIL', 'Admin email', 'AGENCY_ADMIN_EMAIL'] as const,
+  ADMIN_PASSWORD: ['ADMIN_PASSWORD', 'Admin password', 'AGENCY_ADMIN_PASSWORD'] as const,
+  AGENCY_NOTIFICATION_EMAIL: ['AGENCY_NOTIFICATION_EMAIL', 'Agency notification email'] as const,
+} as const;
+
+export function getExplicitSecret(explicitKeys: readonly string[]): string | undefined {
+  for (const key of explicitKeys) {
     const val = process.env[key];
-    if (val && typeof val === 'string' && val.trim()) return val.trim();
-  }
-  const normalizedTargets = preferredKeys.map((k) => k.toLowerCase().replace(/[\s_-]/g, ''));
-  for (const [key, val] of Object.entries(process.env)) {
-    if (!val || typeof val !== 'string' || !val.trim()) continue;
-    const normalizedKey = key.toLowerCase().replace(/[\s_-]/g, '');
-    if (normalizedTargets.includes(normalizedKey)) {
+    if (val && typeof val === 'string' && val.trim().length > 0) {
       return val.trim();
     }
   }
   return undefined;
+}
+
+export function resolveEnvValue(...preferredKeys: string[]): string | undefined {
+  return getExplicitSecret(preferredKeys);
 }
 
 export function initDatabase() {
@@ -191,8 +196,8 @@ export function initDatabase() {
   try { db.exec(`UPDATE users SET role = 'owner' WHERE role = 'admin';`); } catch {}
 
   const isDev = process.env.NODE_ENV !== 'production' || process.env.DEMO_MODE === 'true';
-  const envAdminEmail = resolveEnvValue('ADMIN_EMAIL', 'ADMIN_MAIL', 'AGENCY_ADMIN_EMAIL', 'OWNER_EMAIL', 'ADMINISTRATOR_EMAIL', 'ADMIN_USER', 'ADMIN');
-  const envAdminPassword = resolveEnvValue('ADMIN_PASSWORD', 'ADMIN_PASS', 'AGENCY_ADMIN_PASSWORD', 'OWNER_PASSWORD', 'ADMIN_PW', 'PASSWORD');
+  const envAdminEmail = getExplicitSecret(EXPLICIT_SECRET_NAMES.ADMIN_EMAIL);
+  const envAdminPassword = getExplicitSecret(EXPLICIT_SECRET_NAMES.ADMIN_PASSWORD);
   const hasEnvCredentials = Boolean(envAdminEmail && envAdminPassword);
 
   if (hasEnvCredentials) {
@@ -238,7 +243,7 @@ export function initDatabase() {
 
   // Sync Agency Notification Email without hard-coded personal email addresses
   const existingAgencyEmail = db.prepare("SELECT value FROM settings WHERE key = 'agency_notification_email'").get() as { value: string } | undefined;
-  const configuredEmail = resolveEnvValue('AGENCY_NOTIFICATION_EMAIL', 'NOTIFICATION_EMAIL', 'AGENCY_EMAIL', 'ADMIN_EMAIL') || '';
+  const configuredEmail = getExplicitSecret(EXPLICIT_SECRET_NAMES.AGENCY_NOTIFICATION_EMAIL) || envAdminEmail || '';
   if (!existingAgencyEmail) {
     db.prepare("INSERT INTO settings (key, value) VALUES ('agency_notification_email', ?)").run(configuredEmail);
     db.prepare("INSERT INTO settings (key, value) VALUES ('agency_currency', 'USD')").run();
