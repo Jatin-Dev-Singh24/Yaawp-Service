@@ -328,13 +328,83 @@ apiRouter.get('/auth/me', (req: Request, res: Response) => {
 
 apiRouter.get('/auth/config', (_req: Request, res: Response) => {
   const isDev = process.env.NODE_ENV !== 'production' || process.env.DEMO_MODE === 'true';
-  const adminUser = db.prepare("SELECT email FROM users WHERE role = 'owner' ORDER BY created_at DESC LIMIT 1").get() as { email: string } | undefined;
+  const adminUser = db.prepare("SELECT id FROM users WHERE role = 'owner' ORDER BY created_at DESC LIMIT 1").get() as { id: string } | undefined;
   res.json({
     allowDemoCredentials: isDev,
     hasConfiguredAdmin: Boolean(adminUser),
-    configuredEmail: adminUser?.email || null,
     isProduction: process.env.NODE_ENV === 'production',
   });
+});
+
+apiRouter.post('/auth/setup-admin', (req: Request, res: Response) => {
+  try {
+    const totalUsers = (db.prepare('SELECT count(*) as c FROM users').get() as any)?.c || 0;
+    if (totalUsers > 0) {
+      return res.status(403).json({ error: 'Workspace director is already configured. Please sign in.' });
+    }
+
+    const { name, email, password } = req.body;
+    if (!name || !email || !password) {
+      return res.status(400).json({ error: 'Director name, email, and password are required.' });
+    }
+
+    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedName = name.trim();
+
+    if (!trimmedEmail.includes('@') || !trimmedEmail.includes('.')) {
+      return res.status(400).json({ error: 'Please enter a valid email address.' });
+    }
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters long.' });
+    }
+
+    const id = 'usr_' + crypto.randomUUID();
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+    const now = new Date().toISOString();
+
+    db.prepare(`
+      INSERT INTO users (id, email, password_hash, salt, name, role, created_at)
+      VALUES (?, ?, ?, ?, ?, 'owner', ?)
+    `).run(id, trimmedEmail, hash, salt, trimmedName, now);
+
+    // Sync notification routing if empty
+    const existingAgencyEmail = db.prepare("SELECT value FROM settings WHERE key = 'agency_notification_email'").get() as { value: string } | undefined;
+    if (!existingAgencyEmail || !existingAgencyEmail.value) {
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('agency_notification_email', ?)").run(trimmedEmail);
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    db.prepare(`
+      INSERT INTO sessions (token, user_id, email, role, created_at, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(token, id, trimmedEmail, 'owner', now, expiresAt);
+
+    res.cookie('yaawp_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+    });
+
+    console.log(`[YAAWP Auth] Initialized primary workspace owner via UI setup: ${trimmedEmail}`);
+
+    res.json({
+      success: true,
+      token,
+      user: {
+        id,
+        email: trimmedEmail,
+        name: trimmedName,
+        role: 'owner',
+      },
+    });
+  } catch (err: any) {
+    console.error('Setup admin error:', err);
+    res.status(500).json({ error: 'Failed to initialize administrator account' });
+  }
 });
 
 // ==========================================

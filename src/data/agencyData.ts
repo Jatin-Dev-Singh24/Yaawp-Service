@@ -1,6 +1,11 @@
 import { ServiceItem, ProjectConcept, ProcessStep, OperatingPrinciple } from '../types';
+import heroAgencyImage from '../assets/images/hero_agency_workspace_1790577644216.jpg';
+import workConceptCommerceImage from '../assets/images/work_concept_commerce_1790577657956.jpg';
+import workConceptInterfaceImage from '../assets/images/work_concept_interface_1790577670181.jpg';
+import workConceptBrandingImage from '../assets/images/work_concept_branding_1790577683610.jpg';
+import workConceptCampaignImage from '../assets/images/work_concept_campaign_1790577694460.jpg';
 
-export const HERO_IMAGE = '/src/assets/images/hero_agency_workspace_1790577644216.jpg';
+export const HERO_IMAGE = heroAgencyImage;
 
 export const SERVICES: ServiceItem[] = [
   {
@@ -109,7 +114,7 @@ export const SELECTED_WORK: ProjectConcept[] = [
     category: 'Commerce & Digital Experience',
     shortDescription: 'Minimalist luxury retail experience and physical-to-digital brand architecture for artisanal objects.',
     servicesInvolved: ['Web Development', 'UI/UX Design', 'Branding'],
-    image: '/src/assets/images/work_concept_commerce_1790577657956.jpg',
+    image: workConceptCommerceImage,
     aspectRatio: '4:3',
     overview: 'A digital commerce study exploring how deliberate typography, unhurried negative space, and material photography elevate the perceived value of everyday objects.',
     architectureDetails: [
@@ -131,7 +136,7 @@ export const SELECTED_WORK: ProjectConcept[] = [
     category: 'Product Interface & Design System',
     shortDescription: 'High-density computational workspace and design system balancing complexity with clarity.',
     servicesInvolved: ['UI/UX Design', 'Web Development'],
-    image: '/src/assets/images/work_concept_interface_1790577670181.jpg',
+    image: workConceptInterfaceImage,
     aspectRatio: '4:3',
     overview: 'A specialized web application interface designed for technical operators. Replaces nested card cliches with crisp tabular data and single-elevation layouts.',
     architectureDetails: [
@@ -153,7 +158,7 @@ export const SELECTED_WORK: ProjectConcept[] = [
     category: 'Brand Identity & Creative Direction',
     shortDescription: 'Complete visual identity, editorial packaging suite, and brand governance manual for a modern apothecary.',
     servicesInvolved: ['Branding', 'Content & Creative'],
-    image: '/src/assets/images/work_concept_branding_1790577683610.jpg',
+    image: workConceptBrandingImage,
     aspectRatio: '4:3',
     overview: 'An exploration into tactile branding and editorial restraint. Developed to demonstrate how typography and color discipline communicate authority without hyperbole.',
     architectureDetails: [
@@ -175,7 +180,7 @@ export const SELECTED_WORK: ProjectConcept[] = [
     category: 'Campaign & Digital Narrative',
     shortDescription: 'Multichannel campaign architecture and digital narrative framework for an architectural collective.',
     servicesInvolved: ['Marketing', 'Content & Creative', 'Web Development'],
-    image: '/src/assets/images/work_concept_campaign_1790577694460.jpg',
+    image: workConceptCampaignImage,
     aspectRatio: '4:3',
     overview: 'A digital campaign showcase combining architectural photography, spatial rhythm, and concise editorial copy to drive qualified project inquiries.',
     architectureDetails: [

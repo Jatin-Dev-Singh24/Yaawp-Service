@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { YLogo } from '../YLogo';
-import { Lock, Mail, ArrowRight, ShieldCheck, KeyRound, AlertTriangle } from 'lucide-react';
+import { Lock, Mail, User, ArrowRight, ShieldCheck, KeyRound, Sparkles } from 'lucide-react';
 import { agencyApi } from '../../services/agencyApi';
 import { AgencyUser } from '../../types/admin';
 
@@ -10,6 +10,7 @@ interface AdminLoginProps {
 }
 
 export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onBackToSite }) => {
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -17,7 +18,6 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onBackToSite 
   const [authConfig, setAuthConfig] = useState<{
     allowDemoCredentials: boolean;
     hasConfiguredAdmin: boolean;
-    configuredEmail?: string | null;
     isProduction: boolean;
   } | null>(null);
 
@@ -26,16 +26,12 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onBackToSite 
       .getAuthConfig()
       .then((cfg) => {
         setAuthConfig(cfg);
-        if (cfg.configuredEmail) {
-          setEmail((prev) => (prev ? prev : cfg.configuredEmail!));
-        }
       })
       .catch(() => {
         // Fallback default
         setAuthConfig({
           allowDemoCredentials: import.meta.env.DEV,
           hasConfiguredAdmin: true,
-          configuredEmail: null,
           isProduction: !import.meta.env.DEV,
         });
       });
@@ -52,7 +48,28 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onBackToSite 
         onSuccess(res.user);
       }
     } catch (err: any) {
-      setError(err?.message || 'Authentication failed. Please check credentials.');
+      setError(err?.message || 'Authentication failed. Please check your credentials.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSetupAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setIsLoading(true);
+
+    try {
+      const res = await agencyApi.setupAdmin({
+        name: name.trim(),
+        email: email.trim(),
+        password,
+      });
+      if (res.user) {
+        onSuccess(res.user);
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Failed to initialize Director account. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -63,8 +80,8 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onBackToSite 
     setPassword('yaawp_admin_2026!');
   };
 
-  // Only expose demo credentials in development mode and if server confirms it is allowed
-  const showDemoBox = import.meta.env.DEV && authConfig?.allowDemoCredentials;
+  const isSetupMode = Boolean(authConfig && !authConfig.hasConfiguredAdmin);
+  const showDemoBox = import.meta.env.DEV && authConfig?.allowDemoCredentials && !isSetupMode;
 
   return (
     <div className="min-h-screen bg-[#FAF8F5] text-[#191816] flex flex-col justify-between p-4 sm:p-8">
@@ -84,7 +101,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onBackToSite 
         </button>
       </div>
 
-      {/* Main Login Card */}
+      {/* Main Card */}
       <div className="max-w-md w-full mx-auto my-12 bg-white border border-[#DDD7CD] p-8 sm:p-10 rounded-sm shadow-sm">
         <div className="mb-8">
           <div className="inline-flex items-center gap-2 px-2.5 py-1 bg-[#581825]/10 text-[#581825] text-xs font-medium rounded-sm mb-4">
@@ -92,38 +109,22 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onBackToSite 
             <span>Private Agency Workspace</span>
           </div>
           <h1 className="font-serif text-3xl font-normal text-[#191816] tracking-tight mb-2">
-            Director Access
+            {isSetupMode ? 'Create Director Account' : 'Director Access'}
           </h1>
           <p className="text-sm text-[#5C5853] font-normal leading-relaxed">
-            Enter authorized credentials to manage client intake, project pipelines, and specialist delivery.
+            {isSetupMode
+              ? 'Initialize your master agency owner credentials to unlock your pipeline, project oversight, and specialist roster.'
+              : 'Enter authorized credentials to manage client intake, project pipelines, and specialist delivery.'}
           </p>
         </div>
 
-        {authConfig && !authConfig.hasConfiguredAdmin && (
-          <div className="mb-6 p-3.5 bg-amber-50 border border-amber-200 text-amber-900 text-xs rounded-sm flex items-start gap-2.5">
-            <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+        {isSetupMode && (
+          <div className="mb-6 p-3.5 bg-[#FAF8F5] border border-[#DDD7CD] text-[#5C5853] text-xs rounded-sm flex items-start gap-2.5">
+            <Sparkles className="w-4 h-4 text-[#581825] shrink-0 mt-0.5" />
             <div>
-              <span className="font-semibold block mb-0.5">Admin Account Required</span>
-              Configure <code className="bg-amber-100 px-1 py-0.5 rounded text-[11px]">ADMIN_EMAIL</code> and{' '}
-              <code className="bg-amber-100 px-1 py-0.5 rounded text-[11px]">ADMIN_PASSWORD</code> in your environment variables/secrets.
+              <span className="font-semibold text-[#191816] block mb-0.5">Initial Workspace Setup</span>
+              Create your primary Owner administrator account. You can also configure environment secrets (<code>ADMIN_EMAIL</code> / <code>ADMIN_PASSWORD</code>) anytime.
             </div>
-          </div>
-        )}
-
-        {authConfig?.configuredEmail && (
-          <div className="mb-5 px-3 py-2 bg-[#581825]/5 border border-[#581825]/15 text-[#581825] text-xs rounded-sm flex items-center justify-between">
-            <span className="truncate">
-              Authorized Director: <strong>{authConfig.configuredEmail}</strong>
-            </span>
-            {email !== authConfig.configuredEmail && (
-              <button
-                type="button"
-                onClick={() => setEmail(authConfig.configuredEmail!)}
-                className="text-[11px] font-semibold text-[#581825] hover:underline cursor-pointer ml-2 shrink-0"
-              >
-                Autofill
-              </button>
-            )}
           </div>
         )}
 
@@ -133,58 +134,132 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onSuccess, onBackToSite 
           </div>
         )}
 
-        <form onSubmit={handleLogin} className="space-y-5">
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[#191816] mb-1.5">
-              Agency Email
-            </label>
-            <div className="relative">
-              <Mail className="w-4 h-4 text-[#8C867E] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="director@yaawp.com"
-                autoComplete="email"
-                className="w-full pl-9 pr-3 py-2.5 bg-[#FAF8F5] border border-[#DDD7CD] rounded-sm text-sm text-[#191816] focus:border-[#581825] focus:outline-none transition-colors"
-              />
+        {isSetupMode ? (
+          <form onSubmit={handleSetupAdmin} className="space-y-5">
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-[#191816] mb-1.5">
+                Director Full Name
+              </label>
+              <div className="relative">
+                <User className="w-4 h-4 text-[#8C867E] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Elena Rostova"
+                  autoComplete="name"
+                  className="w-full pl-9 pr-3 py-2.5 bg-[#FAF8F5] border border-[#DDD7CD] rounded-sm text-sm text-[#191816] focus:border-[#581825] focus:outline-none transition-colors"
+                />
+              </div>
             </div>
-          </div>
 
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[#191816] mb-1.5">
-              Secure Password
-            </label>
-            <div className="relative">
-              <Lock className="w-4 h-4 text-[#8C867E] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••••••"
-                autoComplete="current-password"
-                className="w-full pl-9 pr-3 py-2.5 bg-[#FAF8F5] border border-[#DDD7CD] rounded-sm text-sm text-[#191816] focus:border-[#581825] focus:outline-none transition-colors"
-              />
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-[#191816] mb-1.5">
+                Agency Email
+              </label>
+              <div className="relative">
+                <Mail className="w-4 h-4 text-[#8C867E] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="director@yaawp.com"
+                  autoComplete="email"
+                  className="w-full pl-9 pr-3 py-2.5 bg-[#FAF8F5] border border-[#DDD7CD] rounded-sm text-sm text-[#191816] focus:border-[#581825] focus:outline-none transition-colors"
+                />
+              </div>
             </div>
-          </div>
 
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full inline-flex items-center justify-center gap-2 py-3 px-6 bg-[#581825] text-white hover:bg-[#3E0E18] text-xs font-semibold uppercase tracking-wider rounded-sm transition-colors cursor-pointer disabled:opacity-50"
-          >
-            {isLoading ? (
-              <span>Authenticating...</span>
-            ) : (
-              <>
-                <span>Enter Workspace</span>
-                <ArrowRight className="w-4 h-4" />
-              </>
-            )}
-          </button>
-        </form>
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-[#191816] mb-1.5">
+                Master Password (min. 8 characters)
+              </label>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-[#8C867E] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••••••"
+                  autoComplete="new-password"
+                  className="w-full pl-9 pr-3 py-2.5 bg-[#FAF8F5] border border-[#DDD7CD] rounded-sm text-sm text-[#191816] focus:border-[#581825] focus:outline-none transition-colors"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full inline-flex items-center justify-center gap-2 py-3 px-6 bg-[#581825] text-white hover:bg-[#3E0E18] text-xs font-semibold uppercase tracking-wider rounded-sm transition-colors cursor-pointer disabled:opacity-50"
+            >
+              {isLoading ? (
+                <span>Initializing Workspace...</span>
+              ) : (
+                <>
+                  <span>Create Account & Enter</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={handleLogin} className="space-y-5">
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-[#191816] mb-1.5">
+                Agency Email
+              </label>
+              <div className="relative">
+                <Mail className="w-4 h-4 text-[#8C867E] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="director@yaawp.com"
+                  autoComplete="email"
+                  className="w-full pl-9 pr-3 py-2.5 bg-[#FAF8F5] border border-[#DDD7CD] rounded-sm text-sm text-[#191816] focus:border-[#581825] focus:outline-none transition-colors"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-[#191816] mb-1.5">
+                Secure Password
+              </label>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-[#8C867E] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••••••"
+                  autoComplete="current-password"
+                  className="w-full pl-9 pr-3 py-2.5 bg-[#FAF8F5] border border-[#DDD7CD] rounded-sm text-sm text-[#191816] focus:border-[#581825] focus:outline-none transition-colors"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full inline-flex items-center justify-center gap-2 py-3 px-6 bg-[#581825] text-white hover:bg-[#3E0E18] text-xs font-semibold uppercase tracking-wider rounded-sm transition-colors cursor-pointer disabled:opacity-50"
+            >
+              {isLoading ? (
+                <span>Authenticating...</span>
+              ) : (
+                <>
+                  <span>Enter Workspace</span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </form>
+        )}
 
         {/* Development Mode Demo Credentials - Strictly excluded from production */}
         {showDemoBox && (

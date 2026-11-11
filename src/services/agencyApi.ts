@@ -50,7 +50,10 @@ class AgencyApiService {
       headers.set('Authorization', `Bearer ${currentToken}`);
     }
 
-    const response = await fetch(endpoint, {
+    const baseUrl = (import.meta.env.VITE_API_URL as string) || '';
+    const url = endpoint.startsWith('http') ? endpoint : `${baseUrl}${endpoint}`;
+
+    const response = await fetch(url, {
       ...options,
       headers,
       credentials: 'include',
@@ -129,6 +132,17 @@ class AgencyApiService {
     const res = await this.request<{ success: boolean; token: string; user: AgencyUser }>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
+    });
+    if (res.token) {
+      this.setToken(res.token);
+    }
+    return res;
+  }
+
+  async setupAdmin(data: { name: string; email: string; password: string }) {
+    const res = await this.request<{ success: boolean; token: string; user: AgencyUser }>('/api/auth/setup-admin', {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
     if (res.token) {
       this.setToken(res.token);
