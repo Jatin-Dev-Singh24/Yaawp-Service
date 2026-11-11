@@ -39,7 +39,7 @@ class AgencyApiService {
     return null;
   }
 
-  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  private async request<T>(endpoint: string, options: RequestInit = {}, retryCount = 0): Promise<T> {
     const headers = new Headers(options.headers || {});
     if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
       headers.set('Content-Type', 'application/json');
@@ -50,14 +50,31 @@ class AgencyApiService {
       headers.set('Authorization', `Bearer ${currentToken}`);
     }
 
-    const baseUrl = (import.meta.env.VITE_API_URL as string) || '';
-    const url = endpoint.startsWith('http') ? endpoint : `${baseUrl}${endpoint}`;
+    const rawBase = (import.meta.env.VITE_API_URL as string) || '';
+    const cleanBase = rawBase.replace(/\/+$/, '');
+    const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    const url = endpoint.startsWith('http') ? endpoint : `${cleanBase}${cleanEndpoint}`;
 
-    const response = await fetch(url, {
-      ...options,
-      headers,
-      credentials: 'include',
-    });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        ...options,
+        headers,
+        credentials: 'include',
+      });
+    } catch (networkErr: any) {
+      if (retryCount < 1) {
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        return this.request<T>(endpoint, options, retryCount + 1);
+      }
+      throw new Error('Network connection error. Please verify the server is running.');
+    }
+
+    if (response.status === 404 && retryCount < 1) {
+      // Allow container cold start to settle and retry once
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      return this.request<T>(endpoint, options, retryCount + 1);
+    }
 
     if (response.status === 401) {
       this.setToken(null);

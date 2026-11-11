@@ -20,11 +20,34 @@ async function startServer() {
     console.error('[YAAWP] Error initializing database:', err);
   }
 
+  // Normalize consecutive slashes (e.g. //api/auth/login -> /api/auth/login)
+  app.use((req, _res, next) => {
+    if (req.url && req.url.includes('//')) {
+      req.url = req.url.replace(/\/+/g, '/');
+    }
+    next();
+  });
+
+  // CORS and preflight handling for cross-origin or proxy deployments
+  app.use((req, res, next) => {
+    const origin = req.headers.origin || '*';
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(204);
+    }
+    next();
+  });
+
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
-  // Mount backend API router
+  // Mount backend API router (both on /api and direct root for proxy compatibility)
   app.use('/api', apiRouter);
+  app.use(apiRouter);
 
   // In production (or if dist exists and not explicitly in development mode), serve static built files
   const distPath = path.resolve(__dirname, 'dist');
